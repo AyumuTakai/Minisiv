@@ -191,6 +191,9 @@ export class GameState {
     // Restore ID counter above any existing IDs to avoid collisions
     const ids = [...this.units.map(u => u.id), ...this.cities.map(c => c.id)];
     if (ids.length) _nextId = Math.max(...ids) + 1;
+    // Rebuild tile→unit mapping from authoritative unit positions to fix any stale state
+    for (const row of this.tiles) for (const t of row) t.unitId = null;
+    for (const u of this.units) this.tiles[u.y][u.x].unitId = u.id;
   }
 
   save() {
