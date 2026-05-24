@@ -1,3 +1,5 @@
+export const VERSION = '1.0.0';
+
 export const TILE_SIZE = 50;
 export const MAP_W = 16;
 export const MAP_H = 11;

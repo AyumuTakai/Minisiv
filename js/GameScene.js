@@ -1,4 +1,5 @@
 import {
+  VERSION,
   TILE_SIZE, MAP_W, MAP_H, TOP_BAR_H,
   MAP_AREA_W, MAP_AREA_H, PANEL_X, PANEL_W, CANVAS_W, CANVAS_H,
   TERRAIN, UNITS, BUILDINGS, TECHS, CIV_DATA, MAX_TECHS_WIN, MAX_TURNS,
@@ -913,6 +914,9 @@ export class GameScene extends Phaser.Scene {
       y3 += 13;
     }
     HT(c3x + 4, y3 + 3, '費用の単位は 🔬(サイエンス)', 9, '#555');
+
+    // ── Footer: version ──────────────────────────────────────────────────────
+    HT(bx + bw / 2, by + bh - 14, `MiniSiv  ver.${VERSION}`, 10, '#2c4a5e', false, true);
 
     // ── Blocking zone: prevent panel/map zones from firing while help is open ─
     const bz = this.add.zone(0, 0, CANVAS_W, CANVAS_H).setOrigin(0, 0).setInteractive().setDepth(D);
