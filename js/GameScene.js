@@ -41,17 +41,20 @@ export class GameScene extends Phaser.Scene {
     this.hovX = -1; this.hovY = -1;
     this.dirty = true;
 
-    // Graphics layers
+    // Graphics layers (depth order: tiles < overlay < entities < panel < gameOver)
     this.gfxTiles    = this.add.graphics();
     this.gfxOverlay  = this.add.graphics();
     this.gfxEntities = this.add.graphics();
     this.gfxPanel    = this.add.graphics();
+    this.gfxGameOver = this.add.graphics().setDepth(100);
 
     // Text pools
-    this.cityTexts  = [];
-    this.unitTexts  = [];
-    this.panelTexts = [];
-    this.panelBtns  = [];  // { x,y,w,h, action, gfx, txt }
+    this.cityTexts    = [];
+    this.unitTexts    = [];
+    this.panelTexts   = [];
+    this.panelBtns    = [];
+    this.goTexts      = [];   // game over layer texts
+    this.goBtns       = [];   // game over layer buttons
 
     // Input
     this.input.on('pointerdown', this.onPointerDown, this);
@@ -75,9 +78,10 @@ export class GameScene extends Phaser.Scene {
     this.drawTopBar();
     this.drawTiles();
     this.drawOverlays();
-    if (!this.gs.gameOver) this.drawEntities();
-    else { this.gfxEntities.clear(); this.clearTextPool(this.unitTexts); }
+    this.drawEntities();
     this.drawPanel();
+    if (this.gs.gameOver) this.drawGameOverLayer();
+    else this.clearGameOverLayer();
   }
 
   drawTopBar() {
@@ -314,7 +318,6 @@ export class GameScene extends Phaser.Scene {
     this.clearTextPool(this.panelTexts);
     this.destroyPanelBtns();
 
-    if (this.gs.gameOver) { this.drawGameOver(g); return; }
 
     const px = PANEL_X + 10;
     const pw = PANEL_W - 20;
@@ -579,7 +582,16 @@ export class GameScene extends Phaser.Scene {
       }, 0x4e342e);
   }
 
-  drawGameOver(g) {
+  clearGameOverLayer() {
+    this.gfxGameOver.clear();
+    this.clearTextPool(this.goTexts);
+    this.goBtns.forEach(({ g2, t, zone }) => { g2.destroy(); t.destroy(); zone.destroy(); });
+    this.goBtns = [];
+  }
+
+  drawGameOverLayer() {
+    this.clearGameOverLayer();
+    const g = this.gfxGameOver;
     const gs = this.gs;
     const winner = CIV_DATA[gs.winner].name;
     const isPlayer = gs.winner === 0;
@@ -603,12 +615,16 @@ export class GameScene extends Phaser.Scene {
     g.strokeRoundedRect(bx, by, bw, bh, 12);
 
     const cx = CANVAS_W / 2;
-    this.addPText(cx, by + 28,  'ゲーム終了',                    28, '#ffd700', true, true);
-    this.addPText(cx, by + 72,  `${winner} の${reasonLabel}！`,  22, isPlayer ? '#81c784' : '#ef9a9a', false, true);
-    this.addPText(cx, by + 106, reasonLabel === '科学勝利' ? '全テクノロジーを研究しました' :
-                                reasonLabel === 'ドミネーション勝利' ? '全首都を占領しました' :
-                                'ターン終了時のスコアで判定されました', 13, '#888', false, true);
-    this.addPBtn(bx + 40, by + 152, bw - 80, 38, 'もう一度プレイ（新規ゲーム）', () => this.newGame(), COL.btnEnd);
+    const DEPTH = 100;
+    this.addGOText(cx, by + 28,  'ゲーム終了',                   28, '#ffd700', true,  DEPTH);
+    this.addGOText(cx, by + 72,  `${winner} の${reasonLabel}！`, 22, isPlayer ? '#81c784' : '#ef9a9a', true, DEPTH);
+    this.addGOText(cx, by + 110,
+      reasonLabel === '科学勝利'          ? '全テクノロジーを研究しました'   :
+      reasonLabel === 'ドミネーション勝利' ? '全首都を占領しました'           :
+                                            'ターン終了時のスコアで判定されました',
+      13, '#888', true, DEPTH);
+    this.addGOBtn(bx + 40, by + 152, bw - 80, 38, 'もう一度プレイ（新規ゲーム）',
+      () => this.newGame(), COL.btnEnd, DEPTH);
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -643,6 +659,28 @@ export class GameScene extends Phaser.Scene {
     zone.on('pointerdown', () => action());
 
     this.panelBtns.push({ g2, t, zone });
+  }
+
+  addGOText(x, y, text, size, fill, center, depth) {
+    const t = this.add.text(x, y, text, {
+      fontSize: `${size}px`, fill, fontFamily: 'monospace',
+    }).setDepth(depth);
+    if (center) t.setOrigin(0.5, 0);
+    this.goTexts.push(t);
+  }
+
+  addGOBtn(x, y, w, h, label, action, bg, depth) {
+    const g2 = this.add.graphics().setDepth(depth);
+    g2.fillStyle(bg, 1); g2.fillRoundedRect(x, y, w, h, 4);
+    g2.lineStyle(1, 0x444444); g2.strokeRoundedRect(x, y, w, h, 4);
+    const t = this.add.text(x + w / 2, y + h / 2, label, {
+      fontSize: '12px', fill: '#e0e0e0', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0.5).setDepth(depth);
+    const zone = this.add.zone(x, y, w, h).setOrigin(0, 0).setInteractive().setDepth(depth);
+    zone.on('pointerover', () => { g2.clear(); g2.fillStyle(COL.btnHov, 1); g2.fillRoundedRect(x, y, w, h, 4); });
+    zone.on('pointerout',  () => { g2.clear(); g2.fillStyle(bg, 1); g2.fillRoundedRect(x, y, w, h, 4); });
+    zone.on('pointerdown', () => action());
+    this.goBtns.push({ g2, t, zone });
   }
 
   clearTextPool(pool) {
