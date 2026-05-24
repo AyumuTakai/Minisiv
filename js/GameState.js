@@ -436,7 +436,8 @@ export class GameState {
   }
 
   getCityYields(city) {
-    let food = 1, prod = 1, gold = 0, science = 0;
+    // 基礎科学: 人口 + 1（最低2）。図書館で+2追加。
+    let food = 1, prod = 1, gold = 0, science = city.population + 1;
     for (const { x, y } of city.territory) {
       const ter = TERRAIN[this.tiles[y][x].type];
       food += ter.food; prod += ter.prod; gold += ter.gold;
