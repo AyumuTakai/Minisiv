@@ -37,6 +37,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedUnit = null;
     this.selectedCity = null;
     this.panelMode = 'overview';   // 'overview' | 'tech' | 'production'
+    this.menuOpen = false;
     this.hovX = -1; this.hovY = -1;
     this.dirty = true;
 
@@ -74,7 +75,8 @@ export class GameScene extends Phaser.Scene {
     this.drawTopBar();
     this.drawTiles();
     this.drawOverlays();
-    this.drawEntities();
+    if (!this.gs.gameOver) this.drawEntities();
+    else { this.gfxEntities.clear(); this.clearTextPool(this.unitTexts); }
     this.drawPanel();
   }
 
@@ -312,6 +314,8 @@ export class GameScene extends Phaser.Scene {
     this.clearTextPool(this.panelTexts);
     this.destroyPanelBtns();
 
+    if (this.gs.gameOver) { this.drawGameOver(g); return; }
+
     const px = PANEL_X + 10;
     const pw = PANEL_W - 20;
     let y = 10;
@@ -322,6 +326,11 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(cc, 1);
     g.fillRoundedRect(PANEL_X + 4, y, PANEL_W - 8, 36, 6);
     this.addPText(px + 5, y + 9, `${civ.name}  Turn ${this.gs.turn}/${MAX_TURNS}`, 16, '#fff', true);
+    // Menu button (top-right of header)
+    this.addPBtn(PANEL_X + PANEL_W - 52, y + 4, 44, 28, '☰', () => {
+      this.menuOpen = !this.menuOpen;
+      this.dirty = true;
+    }, this.menuOpen ? 0x0d47a1 : 0x1565c0);
     y += 42;
 
     // Yields
@@ -389,8 +398,8 @@ export class GameScene extends Phaser.Scene {
       y += 14;
     }
 
-    // Game over overlay
-    if (this.gs.gameOver) this.drawGameOver(g);
+    // Dropdown menu (rendered last so it appears on top)
+    if (this.menuOpen) this.drawDropdownMenu(g);
   }
 
   drawUnitPanel(g, px, pw, y) {
@@ -544,9 +553,30 @@ export class GameScene extends Phaser.Scene {
     const hasSave = !!localStorage.getItem('minisiv_save');
     this.addPText(px, y, hasSave ? '💾 自動保存: オン' : '💾 保存なし', 11, hasSave ? '#81c784' : '#888');
     y += 20;
-    this.addPBtn(px, y, pw, 24, '新規ゲーム（保存データを削除）', () => this.newGame(), 0x4e342e);
-    y += 30;
     return y;
+  }
+
+  drawDropdownMenu(g) {
+    // Dropdown positioned below the ☰ button (top-right of header)
+    const dw = 220, itemH = 32, pad = 6;
+    const dx = PANEL_X + PANEL_W - 4 - dw;
+    const dy = 46; // just below header
+
+    // Shadow
+    g.fillStyle(0x000000, 0.4);
+    g.fillRoundedRect(dx + 3, dy + 3, dw, itemH + pad * 2, 6);
+    // Background
+    g.fillStyle(0x1e2a3a, 1);
+    g.fillRoundedRect(dx, dy, dw, itemH + pad * 2, 6);
+    g.lineStyle(1, 0x455a64);
+    g.strokeRoundedRect(dx, dy, dw, itemH + pad * 2, 6);
+
+    this.addPBtn(dx + pad, dy + pad, dw - pad * 2, itemH,
+      '新規ゲーム（データ削除）', () => {
+        this.menuOpen = false;
+        if (confirm('保存データを削除して新規ゲームを開始しますか？')) this.newGame();
+        else this.dirty = true;
+      }, 0x4e342e);
   }
 
   drawGameOver(g) {
@@ -646,6 +676,7 @@ export class GameScene extends Phaser.Scene {
   onPointerDown(pointer) {
     if (this.gs.gameOver) return;
     const { x, y } = pointer;
+    if (this.menuOpen) { this.menuOpen = false; this.dirty = true; }
     if (x >= PANEL_X) return; // Panel handled by zones
     if (y < TOP_BAR_H) return;
 
