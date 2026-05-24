@@ -41,11 +41,12 @@ export class GameScene extends Phaser.Scene {
     this.hovX = -1; this.hovY = -1;
     this.dirty = true;
 
-    // Graphics layers (depth order: tiles < overlay < entities < panel < gameOver)
+    // Graphics layers (depth order: tiles < overlay < entities < panel < menu < gameOver)
     this.gfxTiles    = this.add.graphics();
     this.gfxOverlay  = this.add.graphics();
     this.gfxEntities = this.add.graphics();
     this.gfxPanel    = this.add.graphics();
+    this.gfxMenu     = this.add.graphics().setDepth(50);
     this.gfxGameOver = this.add.graphics().setDepth(100);
 
     // Text pools
@@ -53,8 +54,13 @@ export class GameScene extends Phaser.Scene {
     this.unitTexts    = [];
     this.panelTexts   = [];
     this.panelBtns    = [];
+    this.menuBtns     = [];   // dropdown menu items (depth 51/52)
+    this._menuItemHov = -1;  // currently hovered dropdown item index
     this.goTexts      = [];   // game over layer texts
     this.goBtns       = [];   // game over layer buttons
+
+    // Persistent hamburger button (top-left, never destroyed)
+    this._buildHamburgerBtn();
 
     // Input
     this.input.on('pointerdown', this.onPointerDown, this);
@@ -80,6 +86,7 @@ export class GameScene extends Phaser.Scene {
     this.drawOverlays();
     this.drawEntities();
     this.drawPanel();
+    this.updateMenuLayer();
     if (this.gs.gameOver) this.drawGameOverLayer();
     else this.clearGameOverLayer();
   }
@@ -329,11 +336,6 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(cc, 1);
     g.fillRoundedRect(PANEL_X + 4, y, PANEL_W - 8, 36, 6);
     this.addPText(px + 5, y + 9, `${civ.name}  Turn ${this.gs.turn}/${MAX_TURNS}`, 16, '#fff', true);
-    // Menu button (top-right of header)
-    this.addPBtn(PANEL_X + PANEL_W - 52, y + 4, 44, 28, '☰', () => {
-      this.menuOpen = !this.menuOpen;
-      this.dirty = true;
-    }, this.menuOpen ? 0x0d47a1 : 0x1565c0);
     y += 42;
 
     // Yields
@@ -401,8 +403,6 @@ export class GameScene extends Phaser.Scene {
       y += 14;
     }
 
-    // Dropdown menu (rendered last so it appears on top)
-    if (this.menuOpen) this.drawDropdownMenu(g);
   }
 
   drawUnitPanel(g, px, pw, y) {
@@ -559,27 +559,72 @@ export class GameScene extends Phaser.Scene {
     return y;
   }
 
-  drawDropdownMenu(g) {
-    // Dropdown positioned below the ☰ button (top-right of header)
-    const dw = 220, itemH = 32, pad = 6;
-    const dx = PANEL_X + PANEL_W - 4 - dw;
-    const dy = 46; // just below header
+  // ─── Hamburger menu (persistent + depth-50 dropdown) ────────────────────────
 
-    // Shadow
-    g.fillStyle(0x000000, 0.4);
-    g.fillRoundedRect(dx + 3, dy + 3, dw, itemH + pad * 2, 6);
-    // Background
-    g.fillStyle(0x1e2a3a, 1);
-    g.fillRoundedRect(dx, dy, dw, itemH + pad * 2, 6);
-    g.lineStyle(1, 0x455a64);
-    g.strokeRoundedRect(dx, dy, dw, itemH + pad * 2, 6);
+  // Ham button constants (shared by build / onPointerDown / onPointerMove)
+  static HAM = { x: 8, y: 8, w: 40, h: 34 };
+  static DROP = { dw: 220, pad: 6, itemH: 32 };
 
-    this.addPBtn(dx + pad, dy + pad, dw - pad * 2, itemH,
-      '新規ゲーム（データ削除）', () => {
-        this.menuOpen = false;
-        if (confirm('保存データを削除して新規ゲームを開始しますか？')) this.newGame();
-        else this.dirty = true;
-      }, 0x4e342e);
+  _buildHamburgerBtn() {
+    const { x: bx, y: by, w: bw, h: bh } = GameScene.HAM;
+    this.gfxHam = this.add.graphics().setDepth(51);
+    this._hamActive = false; // tracks hover+open state for redraw
+    this._redrawHamBtn(false);
+    this.add.text(bx + bw / 2, by + bh / 2, '☰', {
+      fontSize: '18px', fill: '#fff', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0.5).setDepth(52);
+    // Click & hover handled directly in onPointerDown / onPointerMove
+    // (Phaser zone pointerdown unreliable when topOnly=true with depth layering)
+  }
+
+  _redrawHamBtn(active) {
+    const bx = 8, by = 8, bw = 40, bh = 34;
+    this.gfxHam.clear();
+    this.gfxHam.fillStyle(active ? 0x0d47a1 : 0x1a237e, 1);
+    this.gfxHam.fillRoundedRect(bx, by, bw, bh, 5);
+    this.gfxHam.lineStyle(1, active ? 0x42a5f5 : 0x3949ab);
+    this.gfxHam.strokeRoundedRect(bx, by, bw, bh, 5);
+  }
+
+  updateMenuLayer() {
+    // Clear existing dropdown items
+    this.gfxMenu.clear();
+    this.menuBtns.forEach(({ g2, t }) => { g2.destroy(); t.destroy(); });
+    this.menuBtns = [];
+    this._menuItemHov = -1; // reset hover index
+    if (!this.menuOpen) return;
+
+    // Dropdown below the hamburger button
+    const { x: bx, y: by, h: bh } = GameScene.HAM;
+    const { dw, pad, itemH } = GameScene.DROP;
+    const dx = bx, dy = by + bh + 4;
+    const totalH = pad + itemH + pad;
+
+    // Shadow + background
+    this.gfxMenu.fillStyle(0x000000, 0.45);
+    this.gfxMenu.fillRoundedRect(dx + 3, dy + 3, dw, totalH, 7);
+    this.gfxMenu.fillStyle(0x1e2a3a, 1);
+    this.gfxMenu.fillRoundedRect(dx, dy, dw, totalH, 7);
+    this.gfxMenu.lineStyle(1, 0x455a64);
+    this.gfxMenu.strokeRoundedRect(dx, dy, dw, totalH, 7);
+
+    // Menu items (click + hover handled coordinate-based in onPointerDown/Move)
+    this._addMenuBtn(dx + pad, dy + pad, dw - pad * 2, itemH, '新規ゲーム（データ削除）', 0x4e342e);
+  }
+
+  _addMenuBtn(x, y, w, h, label, bg = COL.btn) {
+    // Click handled in onPointerDown; hover handled in onPointerMove via _menuItemHov
+    const g2 = this.add.graphics().setDepth(51);
+    const drawBg = (col) => {
+      g2.clear();
+      g2.fillStyle(col, 1); g2.fillRoundedRect(x, y, w, h, 4);
+      g2.lineStyle(1, 0x555555); g2.strokeRoundedRect(x, y, w, h, 4);
+    };
+    drawBg(bg);
+    const t = this.add.text(x + w / 2, y + h / 2, label, {
+      fontSize: '12px', fill: '#e0e0e0', fontFamily: 'monospace',
+    }).setOrigin(0.5, 0.5).setDepth(52);
+    this.menuBtns.push({ g2, t, drawBg, bg, x, y, w, h });
   }
 
   clearGameOverLayer() {
@@ -704,8 +749,32 @@ export class GameScene extends Phaser.Scene {
   // ─── Input ───────────────────────────────────────────────────────────────────
 
   onPointerMove(pointer) {
-    const tx = Math.floor(pointer.x / TILE_SIZE);
-    const ty = Math.floor((pointer.y - TOP_BAR_H) / TILE_SIZE);
+    const { x, y } = pointer;
+
+    // Hamburger hover effect (coordinate-based, no zone events needed)
+    const { x: hx, y: hy, w: hw, h: hh } = GameScene.HAM;
+    const overHam = x >= hx && x <= hx + hw && y >= hy && y <= hy + hh;
+    const wantActive = overHam || this.menuOpen;
+    if (wantActive !== this._hamActive) {
+      this._hamActive = wantActive;
+      this._redrawHamBtn(wantActive);
+    }
+
+    // Dropdown item hover (coordinate-based highlight)
+    if (this.menuOpen && this.menuBtns.length) {
+      let hovIdx = -1;
+      this.menuBtns.forEach(({ x: ix, y: iy, w: iw, h: ih }, idx) => {
+        if (x >= ix && x <= ix + iw && y >= iy && y <= iy + ih) hovIdx = idx;
+      });
+      if (hovIdx !== this._menuItemHov) {
+        this._menuItemHov = hovIdx;
+        this.menuBtns.forEach(({ drawBg, bg }, idx) => drawBg(idx === hovIdx ? COL.btnHov : bg));
+      }
+    }
+
+    // Map hover highlight
+    const tx = Math.floor(x / TILE_SIZE);
+    const ty = Math.floor((y - TOP_BAR_H) / TILE_SIZE);
     if (tx !== this.hovX || ty !== this.hovY) {
       this.hovX = tx; this.hovY = ty; this.dirty = true;
     }
@@ -714,7 +783,36 @@ export class GameScene extends Phaser.Scene {
   onPointerDown(pointer) {
     if (this.gs.gameOver) return;
     const { x, y } = pointer;
-    if (this.menuOpen) { this.menuOpen = false; this.dirty = true; }
+
+    // ── Hamburger button (coordinate-based, bypasses Phaser zone events) ──────
+    const { x: hx, y: hy, w: hw, h: hh } = GameScene.HAM;
+    if (x >= hx && x <= hx + hw && y >= hy && y <= hy + hh) {
+      this.menuOpen = !this.menuOpen;
+      this._hamActive = this.menuOpen;
+      this._redrawHamBtn(this.menuOpen);
+      this.dirty = true;
+      return;
+    }
+
+    // ── Dropdown area ─────────────────────────────────────────────────────────
+    const { dw, pad, itemH } = GameScene.DROP;
+    const dropY = hy + hh + 4;
+    const dropH  = pad + itemH + pad;
+    if (this.menuOpen && x >= hx && x <= hx + dw && y >= dropY && y <= dropY + dropH) {
+      // "新規ゲーム" item
+      const itemX = hx + pad, itemY = dropY + pad, itemW = dw - pad * 2;
+      if (x >= itemX && x <= itemX + itemW && y >= itemY && y <= itemY + itemH) {
+        this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false); this.dirty = true;
+        if (confirm('保存データを削除して新規ゲームを開始しますか？')) this.newGame();
+      }
+      return; // consumed by dropdown area regardless
+    }
+
+    // ── Close menu if clicking outside ───────────────────────────────────────
+    if (this.menuOpen) {
+      this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false); this.dirty = true;
+    }
+
     if (x >= PANEL_X) return; // Panel handled by zones
     if (y < TOP_BAR_H) return;
 
