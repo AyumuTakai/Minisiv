@@ -527,10 +527,14 @@ export class GameState {
         }
       }
 
-      // Reset units
+      // Reset units + 都市駐留回復
       for (const u of this.units.filter(u => u.civIndex === civ.index)) {
         u.movesLeft = UNITS[u.type].mov;
         u.hasActed = false;
+        const city = this.getCityAt(u.x, u.y);
+        if (city && city.civIndex === u.civIndex && u.hp < u.maxHp) {
+          u.hp = Math.min(u.maxHp, u.hp + 20);
+        }
       }
 
       if (!civ.isPlayer) this.doAITurn(civ);
