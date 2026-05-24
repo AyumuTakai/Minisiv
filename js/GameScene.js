@@ -1,6 +1,6 @@
 import {
   TILE_SIZE, MAP_W, MAP_H, TOP_BAR_H,
-  MAP_AREA_W, MAP_AREA_H, PANEL_X, PANEL_W, CANVAS_H,
+  MAP_AREA_W, MAP_AREA_H, PANEL_X, PANEL_W, CANVAS_W, CANVAS_H,
   TERRAIN, UNITS, BUILDINGS, TECHS, CIV_DATA, MAX_TECHS_WIN, MAX_TURNS,
 } from './data.js';
 import { GameState } from './GameState.js';
@@ -551,15 +551,34 @@ export class GameScene extends Phaser.Scene {
 
   drawGameOver(g) {
     const gs = this.gs;
-    g.fillStyle(0x000000, 0.75);
-    g.fillRect(PANEL_X, 0, PANEL_W, CANVAS_H);
     const winner = CIV_DATA[gs.winner].name;
     const isPlayer = gs.winner === 0;
-    this.addPText(PANEL_X + PANEL_W / 2, 200, 'ゲーム終了', 28, '#ffd700', true, true);
-    this.addPText(PANEL_X + PANEL_W / 2, 240, `${winner} の勝利！`, 22, isPlayer ? '#81c784' : '#ef9a9a', false, true);
-    this.addPBtn(PANEL_X + 30, 290, PANEL_W - 60, 36, 'もう一度プレイ (新規)', () => {
-      this.newGame();
-    }, COL.btnEnd);
+    const reasonLabel = {
+      domination: 'ドミネーション勝利',
+      science:    '科学勝利',
+      score:      'スコア勝利',
+    }[gs.winReason] ?? '勝利';
+
+    // Full-screen dim overlay
+    g.fillStyle(0x000000, 0.72);
+    g.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Centered dialog box
+    const bw = 420, bh = 230;
+    const bx = (CANVAS_W - bw) / 2;
+    const by = (CANVAS_H - bh) / 2;
+    g.fillStyle(0x1a1a2e, 1);
+    g.fillRoundedRect(bx, by, bw, bh, 12);
+    g.lineStyle(2, isPlayer ? 0x81c784 : 0xef9a9a, 1);
+    g.strokeRoundedRect(bx, by, bw, bh, 12);
+
+    const cx = CANVAS_W / 2;
+    this.addPText(cx, by + 28,  'ゲーム終了',                    28, '#ffd700', true, true);
+    this.addPText(cx, by + 72,  `${winner} の${reasonLabel}！`,  22, isPlayer ? '#81c784' : '#ef9a9a', false, true);
+    this.addPText(cx, by + 106, reasonLabel === '科学勝利' ? '全テクノロジーを研究しました' :
+                                reasonLabel === 'ドミネーション勝利' ? '全首都を占領しました' :
+                                'ターン終了時のスコアで判定されました', 13, '#888', false, true);
+    this.addPBtn(bx + 40, by + 152, bw - 80, 38, 'もう一度プレイ（新規ゲーム）', () => this.newGame(), COL.btnEnd);
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

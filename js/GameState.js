@@ -150,6 +150,7 @@ export class GameState {
     this.turn = 1;
     this.gameOver = false;
     this.winner = -1;
+    this.winReason = null;
     this.log = [];
 
     const positions = findStartPositions(this.tiles, 2);
@@ -185,8 +186,9 @@ export class GameState {
     this.units  = data.units;
     this.cities = data.cities;
     this.turn     = data.turn;
-    this.gameOver = data.gameOver;
-    this.winner   = data.winner;
+    this.gameOver  = data.gameOver;
+    this.winner    = data.winner;
+    this.winReason = data.winReason ?? null;
     this.log      = data.log ?? [];
     // Restore ID counter above any existing IDs to avoid collisions
     const ids = [...this.units.map(u => u.id), ...this.cities.map(c => c.id)];
@@ -210,9 +212,10 @@ export class GameState {
       units:    this.units,
       cities:   this.cities,
       turn:     this.turn,
-      gameOver: this.gameOver,
-      winner:   this.winner,
-      log:      this.log,
+      gameOver:  this.gameOver,
+      winner:    this.winner,
+      winReason: this.winReason,
+      log:       this.log,
     });
   }
 
@@ -474,21 +477,20 @@ export class GameState {
     const capitals = this.cities.filter(c => c.isCapital);
     for (const civ of this.civs) {
       if (capitals.length > 0 && capitals.every(c => c.civIndex === civ.index)) {
-        this.gameOver = true; this.winner = civ.index; return;
+        this.gameOver = true; this.winner = civ.index; this.winReason = 'domination'; return;
       }
     }
     // Science: 7 techs
     for (const civ of this.civs) {
       if (civ.techs.length >= MAX_TECHS_WIN) {
-        this.gameOver = true; this.winner = civ.index; return;
+        this.gameOver = true; this.winner = civ.index; this.winReason = 'science'; return;
       }
     }
     // Turn limit
     if (this.turn >= 100) {
-      // Winner by most cities + techs
       const score = (c) => this.cities.filter(ci => ci.civIndex === c.index).length * 5 + c.techs.length;
       const best = this.civs.reduce((a, b) => score(a) >= score(b) ? a : b);
-      this.gameOver = true; this.winner = best.index;
+      this.gameOver = true; this.winner = best.index; this.winReason = 'score';
     }
   }
 
