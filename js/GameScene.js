@@ -121,7 +121,7 @@ export class GameScene extends Phaser.Scene {
 
     this.clearTextPool(this.cityTexts);
     for (let i = 0; i < items.length; i++) {
-      const t = this.add.text(10 + i * 158, 14, items[i], {
+      const t = this.add.text(60 + i * 150, 14, items[i], {
         fontSize: '15px', fill: '#e0e0e0', fontFamily: 'monospace',
       });
       this.cityTexts.push(t);
