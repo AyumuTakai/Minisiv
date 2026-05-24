@@ -226,7 +226,7 @@ export class GameState {
   get player() { return this.civs[0]; }
 
   addLog(msg) {
-    this.log.unshift(msg);
+    this.log.unshift({ turn: this.turn, msg });
     if (this.log.length > 8) this.log.pop();
   }
 

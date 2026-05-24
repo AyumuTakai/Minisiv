@@ -47,6 +47,7 @@ export class GameScene extends Phaser.Scene {
     this.gfxEntities = this.add.graphics();
     this.gfxPanel    = this.add.graphics();
     this.gfxMenu     = this.add.graphics().setDepth(50);
+    this.gfxHelp     = this.add.graphics().setDepth(75);
     this.gfxGameOver = this.add.graphics().setDepth(100);
 
     // Text pools
@@ -56,6 +57,10 @@ export class GameScene extends Phaser.Scene {
     this.panelBtns    = [];
     this.menuBtns     = [];   // dropdown menu items (depth 51/52)
     this._menuItemHov = -1;  // currently hovered dropdown item index
+    this.helpTexts    = [];   // help layer texts (depth 76)
+    this.helpObjs     = [];   // help layer misc objects (blocking zone etc.)
+    this.helpOpen     = false;
+    this._helpCloseBtn = null; // {x,y,w,h} for coordinate-based click detection
     this.goTexts      = [];   // game over layer texts
     this.goBtns       = [];   // game over layer buttons
 
@@ -69,7 +74,10 @@ export class GameScene extends Phaser.Scene {
     // Keyboard
     this.input.keyboard.on('keydown-ENTER', () => this.doEndTurn());
     this.input.keyboard.on('keydown-SPACE', () => this.doEndTurn());
-    this.input.keyboard.on('keydown-ESC',   () => { this.deselect(); this.panelMode = 'overview'; this.dirty = true; });
+    this.input.keyboard.on('keydown-ESC',   () => {
+      if (this.helpOpen) { this.helpOpen = false; this.dirty = true; return; }
+      this.deselect(); this.panelMode = 'overview'; this.dirty = true;
+    });
   }
 
   update() {
@@ -87,6 +95,9 @@ export class GameScene extends Phaser.Scene {
     this.drawEntities();
     this.drawPanel();
     this.updateMenuLayer();
+    if (this.gs.gameOver) this.helpOpen = false; // auto-close help on game over
+    if (this.helpOpen) this.drawHelpLayer();
+    else this.clearHelpLayer();
     if (this.gs.gameOver) this.drawGameOverLayer();
     else this.clearGameOverLayer();
   }
@@ -399,7 +410,12 @@ export class GameScene extends Phaser.Scene {
     this.addPText(px, y, '── ログ ──────────────', 11, '#666');
     y += 16;
     for (const entry of this.gs.log.slice(0, 6)) {
-      this.addPText(px, y, entry, 10, '#aaa');
+      if (typeof entry === 'object' && entry.turn !== undefined) {
+        this.addPText(px,      y, `T${entry.turn}`, 9,  '#4a6278');
+        this.addPText(px + 28, y, entry.msg,        10, '#aaa');
+      } else {
+        this.addPText(px, y, String(entry), 10, '#aaa');
+      }
       y += 14;
     }
 
@@ -563,7 +579,7 @@ export class GameScene extends Phaser.Scene {
 
   // Ham button constants (shared by build / onPointerDown / onPointerMove)
   static HAM = { x: 8, y: 8, w: 40, h: 34 };
-  static DROP = { dw: 220, pad: 6, itemH: 32 };
+  static DROP = { dw: 220, pad: 6, itemH: 30, itemGap: 4 };
 
   _buildHamburgerBtn() {
     const { x: bx, y: by, w: bw, h: bh } = GameScene.HAM;
@@ -596,9 +612,9 @@ export class GameScene extends Phaser.Scene {
 
     // Dropdown below the hamburger button
     const { x: bx, y: by, h: bh } = GameScene.HAM;
-    const { dw, pad, itemH } = GameScene.DROP;
+    const { dw, pad, itemH, itemGap } = GameScene.DROP;
     const dx = bx, dy = by + bh + 4;
-    const totalH = pad + itemH + pad;
+    const totalH = pad + itemH + itemGap + itemH + pad;
 
     // Shadow + background
     this.gfxMenu.fillStyle(0x000000, 0.45);
@@ -609,7 +625,8 @@ export class GameScene extends Phaser.Scene {
     this.gfxMenu.strokeRoundedRect(dx, dy, dw, totalH, 7);
 
     // Menu items (click + hover handled coordinate-based in onPointerDown/Move)
-    this._addMenuBtn(dx + pad, dy + pad, dw - pad * 2, itemH, '新規ゲーム（データ削除）', 0x4e342e);
+    this._addMenuBtn(dx + pad, dy + pad, dw - pad * 2, itemH, 'ヘルプ', 0x1a3a5c);
+    this._addMenuBtn(dx + pad, dy + pad + itemH + itemGap, dw - pad * 2, itemH, '新規ゲーム（データ削除）', 0x4e342e);
   }
 
   _addMenuBtn(x, y, w, h, label, bg = COL.btn) {
@@ -625,6 +642,288 @@ export class GameScene extends Phaser.Scene {
       fontSize: '12px', fill: '#e0e0e0', fontFamily: 'monospace',
     }).setOrigin(0.5, 0.5).setDepth(52);
     this.menuBtns.push({ g2, t, drawBg, bg, x, y, w, h });
+  }
+
+  // ─── Help dialog layer (depth 75/76) ────────────────────────────────────────
+
+  clearHelpLayer() {
+    this.gfxHelp.clear();
+    this.clearTextPool(this.helpTexts);
+    this.helpObjs.forEach(o => o.destroy());
+    this.helpObjs = [];
+    this._helpCloseBtn = null;
+  }
+
+  drawHelpLayer() {
+    this.clearHelpLayer();
+    const g = this.gfxHelp;
+    const D = 76; // depth for all help texts
+
+    // ── Full-screen backdrop ────────────────────────────────────────────────
+    g.fillStyle(0x000000, 0.88);
+    g.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // ── Dialog box ───────────────────────────────────────────────────────────
+    const bx = 28, by = 8, bw = 1144, bh = 584;
+    g.fillStyle(0x0c1a28, 1);
+    g.fillRoundedRect(bx, by, bw, bh, 10);
+    g.lineStyle(2, 0x2e4a60, 1);
+    g.strokeRoundedRect(bx, by, bw, bh, 10);
+
+    // Header band
+    g.fillStyle(0x132236, 1);
+    g.fillRoundedRect(bx, by, bw, 48, 10);
+    g.fillRect(bx, by + 28, bw, 20); // square off lower half
+    g.lineStyle(1, 0x2a4a60, 1);
+    g.lineBetween(bx, by + 48, bx + bw, by + 48);
+
+    // ── Local helpers ────────────────────────────────────────────────────────
+    // HT: add a text object to the help layer
+    const HT = (x, y, text, size, fill = '#aaa', bold = false, center = false) => {
+      const t = this.add.text(x, y, text, {
+        fontSize: `${size}px`, fill,
+        fontFamily: 'monospace', fontStyle: bold ? 'bold' : 'normal',
+      }).setDepth(D);
+      if (center) t.setOrigin(0.5, 0.5);
+      this.helpTexts.push(t);
+      return t;
+    };
+    // SEC: section header with coloured bg, returns new y
+    const cw = 352;
+    const SEC = (x, y, label) => {
+      g.fillStyle(0x183045, 1);
+      g.fillRect(x, y, cw, 19);
+      g.lineStyle(1, 0x2a4a62, 1);
+      g.lineBetween(x, y + 19, x + cw, y + 19);
+      HT(x + 5, y + 2, label, 10, '#4fc3f7', true);
+      return y + 22;
+    };
+    // LN: one body line, returns new y
+    const LN = (x, y, text, col = '#999', sz = 10) => {
+      HT(x, y, text, sz, col);
+      return y + 13;
+    };
+
+    // ── Title & close button ─────────────────────────────────────────────────
+    HT(bx + 16, by + 13, '■ ヘルプ  /  MiniSiv ゲームガイド', 16, '#4fc3f7', true);
+
+    const cbx = bx + bw - 98, cby = by + 9, cbw = 88, cbh = 30;
+    g.fillStyle(0x253545, 1);
+    g.fillRoundedRect(cbx, cby, cbw, cbh, 5);
+    g.lineStyle(1, 0x3a5570, 1);
+    g.strokeRoundedRect(cbx, cby, cbw, cbh, 5);
+    HT(cbx + cbw / 2, cby + cbh / 2, '✕  閉じる', 12, '#ccc', false, true);
+    this._helpCloseBtn = { x: cbx, y: cby, w: cbw, h: cbh };
+
+    // ── Column positions ─────────────────────────────────────────────────────
+    // 3 columns × 352px, gaps of 14px, left padding 14px → 14+352+14+352+14+352+14 = 1112 ≤ 1144 ✓
+    const c1x = bx + 14;          // 42
+    const c2x = c1x + cw + 14;    // 408
+    const c3x = c2x + cw + 14;    // 774
+    const cy0 = by + 56;          // content start y
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Column 1 — 概要 / 勝利条件 / 操作 / ユニット状態
+    // ════════════════════════════════════════════════════════════════════════
+    let y1 = cy0;
+
+    y1 = SEC(c1x, y1, ' ゲーム概要');
+    y1 = LN(c1x + 4, y1, '2文明のターン制ストラテジー。ユニットと');
+    y1 = LN(c1x + 4, y1, '都市を操り敵文明に打ち勝とう。ゲームは');
+    y1 = LN(c1x + 4, y1, '最大100ターン。毎ターン終了時に収入・');
+    y1 = LN(c1x + 4, y1, '研究・生産が自動処理される。');
+    y1 += 7;
+
+    y1 = SEC(c1x, y1, ' 勝利条件');
+    y1 = LN(c1x + 4, y1, '● ドミネーション勝利', '#ff8a65', 10);
+    y1 = LN(c1x + 14, y1, '敵の首都を軍事力で占領する', '#777');
+    y1 = LN(c1x + 4, y1, '● 科学勝利', '#4fc3f7', 10);
+    y1 = LN(c1x + 14, y1, `テクノロジーを${MAX_TECHS_WIN}種すべて研究する`, '#777');
+    y1 = LN(c1x + 4, y1, '● スコア勝利', '#ffd54f', 10);
+    y1 = LN(c1x + 14, y1, '100T終了時に都市数+技術数が多い', '#777');
+    y1 = LN(c1x + 14, y1, '文明が勝利する', '#777');
+    y1 += 7;
+
+    y1 = SEC(c1x, y1, ' 基本操作');
+    y1 = LN(c1x + 4, y1, '  ユニットクリック → 選択');
+    y1 = LN(c1x + 4, y1, '  青タイル         → 移動先を指定');
+    y1 = LN(c1x + 4, y1, '  赤タイル         → 攻撃対象を指定');
+    y1 = LN(c1x + 4, y1, '  都市クリック     → 生産管理');
+    y1 = LN(c1x + 4, y1, '  [研究を選ぶ]     → 技術研究');
+    y1 = LN(c1x + 4, y1, '  Enter / Space    → ターン終了');
+    y1 = LN(c1x + 4, y1, '  ESC              → 選択解除/ヘルプ閉じる');
+    y1 += 7;
+
+    y1 = SEC(c1x, y1, ' ユニット状態の見方');
+    y1 = LN(c1x + 4, y1, '白枠の円 = 行動可能  灰枠 = 行動済み');
+    y1 = LN(c1x + 4, y1, '円下のHPバー: 緑→黄→赤 で残HP表示');
+    y1 = LN(c1x + 4, y1, '自軍都市に駐留すると毎ターンHP+20回復');
+    y1 = LN(c1x + 4, y1, '射程2ユニットは移動後も射撃攻撃が可能');
+    y1 = LN(c1x + 4, y1, '遠距離攻撃を受けた場合は反撃ダメなし');
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Column 2 — ユニット一覧 + 説明
+    // ════════════════════════════════════════════════════════════════════════
+    let y2 = cy0;
+
+    y2 = SEC(c2x, y2, ' ユニット一覧');
+
+    // Table header row
+    g.fillStyle(0x1a2c3c, 1);
+    g.fillRect(c2x, y2, cw, 16);
+    const TH = (x, y, txt, col = '#666') => HT(x, y + 1, txt, 9, col);
+    TH(c2x + 2,   y2, '名前');
+    TH(c2x + 100, y2, 'ATK', '#ff8a65');
+    TH(c2x + 126, y2, 'DEF', '#81c784');
+    TH(c2x + 154, y2, ' HP', '#aaa');
+    TH(c2x + 182, y2, 'MOV', '#4fc3f7');
+    TH(c2x + 208, y2, 'RNG', '#ffd54f');
+    TH(c2x + 234, y2, '必要テク');
+    y2 += 17;
+
+    const unitRows = [
+      { id: 'WARRIOR',  tech: '−' },
+      { id: 'ARCHER',   tech: 'Archery' },
+      { id: 'SETTLER',  tech: '− (開拓)' },
+      { id: 'SPEARMAN', tech: 'Bronze W.' },
+      { id: 'KNIGHT',   tech: 'Horseback R.' },
+    ];
+    for (let i = 0; i < unitRows.length; i++) {
+      const { id, tech } = unitRows[i];
+      const u = UNITS[id];
+      if (i % 2 === 0) { g.fillStyle(0x14222e, 0.8); g.fillRect(c2x, y2, cw, 15); }
+      TH(c2x + 2,   y2, `[${u.sym}] ${u.name}`, '#ccc');
+      TH(c2x + 102, y2, String(u.atk),            '#ff8a65');
+      TH(c2x + 128, y2, String(u.def),            '#81c784');
+      TH(c2x + 156, y2, String(u.maxHp),          '#aaa');
+      TH(c2x + 184, y2, String(u.mov),            '#4fc3f7');
+      TH(c2x + 210, y2, u.range > 0 ? String(u.range) : '−', '#ffd54f');
+      TH(c2x + 236, y2, tech,                     '#777');
+      y2 += 15;
+    }
+    y2 += 7;
+
+    // Unit descriptions
+    y2 = SEC(c2x, y2, ' ユニット詳細');
+
+    const unitDescs = [
+      { id: 'WARRIOR',  d1: '序盤の主力歩兵。安価で生産しやすい。',   d2: '移動2/射程1。攻防バランスが取れた基本ユニット。' },
+      { id: 'ARCHER',   d1: '射程2の弓兵。遠距離から安全に攻撃。',    d2: '射撃時は反撃なし。防御が低いため護衛が必要。' },
+      { id: 'SETTLER',  d1: '新都市を建設する開拓者ユニット。',        d2: '建設後に消滅。戦闘力が低いため護衛推奨。' },
+      { id: 'SPEARMAN', d1: '重装歩兵。高い防御力を誇る前線の盾。',    d2: 'ATK30/DEF28で均衡。Bronze Working必須。' },
+      { id: 'KNIGHT',   d1: '移動力4の騎士。高機動・高攻撃力。',       d2: 'コスト100が重いが戦況を一変させる力あり。' },
+    ];
+    for (const { id, d1, d2 } of unitDescs) {
+      const u = UNITS[id];
+      const icX = c2x + 10, icY = y2 + 10;
+      g.fillStyle(CIV_DATA[0].unitBg, 0.85);
+      g.fillCircle(icX, icY, 9);
+      HT(icX, icY, u.sym, 9, '#fff', true, true);
+      HT(c2x + 24, y2,      u.name, 10, '#ddd', true);
+      HT(c2x + 24, y2 + 13, d1,     9,  '#888');
+      HT(c2x + 24, y2 + 24, d2,     9,  '#666');
+      y2 += 39;
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // Column 3 — 地形 / 建物 / 技術ツリー
+    // ════════════════════════════════════════════════════════════════════════
+    let y3 = cy0;
+
+    y3 = SEC(c3x, y3, ' 地形一覧');
+
+    g.fillStyle(0x1a2c3c, 1);
+    g.fillRect(c3x, y3, cw, 16);
+    TH(c3x + 2,   y3, '地形(日本語名)');
+    TH(c3x + 162, y3, '食', '#81c784');
+    TH(c3x + 188, y3, '生', '#ffb74d');
+    TH(c3x + 214, y3, '金', '#ffd54f');
+    TH(c3x + 240, y3, '移', '#4fc3f7');
+    y3 += 17;
+
+    const terrainRows = [
+      ['GRASSLAND', '草原'],   ['PLAINS',    '平原'],
+      ['HILLS',     '丘陵'],   ['FOREST',    '森林'],
+      ['DESERT',    '砂漠'],   ['SNOW',      '凍土'],
+      ['WATER',     '海水'],   ['MOUNTAIN',  '山岳'],
+    ];
+    for (let i = 0; i < terrainRows.length; i++) {
+      const [id, jp] = terrainRows[i];
+      const ter = TERRAIN[id];
+      if (i % 2 === 0) { g.fillStyle(0x14222e, 0.8); g.fillRect(c3x, y3, cw, 15); }
+      g.fillStyle(ter.color, 0.9);
+      g.fillRect(c3x + 1, y3 + 2, 5, 11);
+      TH(c3x + 10, y3, `${ter.name} (${jp})`, '#bbb');
+      if (!ter.passable) {
+        TH(c3x + 166, y3, '通行不可', '#555');
+      } else {
+        TH(c3x + 164, y3, String(ter.food),     '#81c784');
+        TH(c3x + 190, y3, String(ter.prod),     '#ffb74d');
+        TH(c3x + 216, y3, String(ter.gold),     '#ffd54f');
+        TH(c3x + 242, y3, String(ter.moveCost), '#4fc3f7');
+      }
+      y3 += 15;
+    }
+    y3 += 7;
+
+    y3 = SEC(c3x, y3, ' 建物一覧');
+
+    g.fillStyle(0x1a2c3c, 1);
+    g.fillRect(c3x, y3, cw, 16);
+    TH(c3x + 2,   y3, '建物名');
+    TH(c3x + 110, y3, '食', '#81c784');
+    TH(c3x + 130, y3, '生', '#ffb74d');
+    TH(c3x + 150, y3, '金', '#ffd54f');
+    TH(c3x + 170, y3, '科', '#4fc3f7');
+    TH(c3x + 194, y3, '費用');
+    TH(c3x + 236, y3, '必要テク');
+    y3 += 17;
+
+    const bldgRows = [
+      { id: 'GRANARY',  tech: 'Pottery' },
+      { id: 'WORKSHOP', tech: '−' },
+      { id: 'MARKET',   tech: '−' },
+      { id: 'BARRACKS', tech: 'Bronze W.' },
+      { id: 'LIBRARY',  tech: 'Writing' },
+    ];
+    for (let i = 0; i < bldgRows.length; i++) {
+      const { id, tech } = bldgRows[i];
+      const b = BUILDINGS[id];
+      if (i % 2 === 0) { g.fillStyle(0x14222e, 0.8); g.fillRect(c3x, y3, cw, 15); }
+      TH(c3x + 2,   y3, b.name,                                '#ccc');
+      TH(c3x + 110, y3, b.food    > 0 ? `+${b.food}`    : '−', '#81c784');
+      TH(c3x + 130, y3, b.prod    > 0 ? `+${b.prod}`    : '−', '#ffb74d');
+      TH(c3x + 150, y3, b.gold    > 0 ? `+${b.gold}`    : '−', '#ffd54f');
+      TH(c3x + 170, y3, b.science > 0 ? `+${b.science}` : '−', '#4fc3f7');
+      TH(c3x + 194, y3, `${b.cost}⚒`,                          '#aaa');
+      TH(c3x + 236, y3, tech,                                   '#777');
+      y3 += 15;
+    }
+    HT(c3x + 4, y3 + 1, '※Barracks: 都市駐留ユニットのHP回復量+', 9, '#555');
+    y3 += 16;
+    y3 += 7;
+
+    y3 = SEC(c3x, y3, ` 技術ツリー  (全9種 / ${MAX_TECHS_WIN}種研究で科学勝利)`);
+
+    const treeLines = [
+      ['Pottery(35)  → Writing(80) → Mathematics(120)',       '#4fc3f7'],
+      ['             Writing → Library 建設可能',              '#666'],
+      ['Archery(40)  → Archer 生産可能',                       '#4fc3f7'],
+      ['Bronze W.(65) → Spearman, Barracks 解放',             '#4fc3f7'],
+      ['               → Iron Working(100)',                   '#666'],
+      ['               → Currency(80) → Market 建設可能',     '#666'],
+      ['Animal H.(40) → Horseback Riding(100)',                '#4fc3f7'],
+      ['               → Knight 生産可能',                    '#666'],
+    ];
+    for (const [txt, col] of treeLines) {
+      HT(c3x + 4, y3, txt, 9, col);
+      y3 += 13;
+    }
+    HT(c3x + 4, y3 + 3, '費用の単位は 🔬(サイエンス)', 9, '#555');
+
+    // ── Blocking zone: prevent panel/map zones from firing while help is open ─
+    const bz = this.add.zone(0, 0, CANVAS_W, CANVAS_H).setOrigin(0, 0).setInteractive().setDepth(D);
+    this.helpObjs.push(bz);
   }
 
   clearGameOverLayer() {
@@ -701,7 +1000,7 @@ export class GameScene extends Phaser.Scene {
     const zone = this.add.zone(x, y, w, h).setOrigin(0, 0).setInteractive();
     zone.on('pointerover', () => { g2.clear(); g2.fillStyle(COL.btnHov, 1); g2.fillRoundedRect(x, y, w, h, 4); g2.lineStyle(1, 0x666666); g2.strokeRoundedRect(x, y, w, h, 4); });
     zone.on('pointerout',  () => { g2.clear(); g2.fillStyle(bg, 1); g2.fillRoundedRect(x, y, w, h, 4); g2.lineStyle(1, 0x444444); g2.strokeRoundedRect(x, y, w, h, 4); });
-    zone.on('pointerdown', () => action());
+    zone.on('pointerdown', () => { if (!this.helpOpen) action(); });
 
     this.panelBtns.push({ g2, t, zone });
   }
@@ -795,15 +1094,23 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ── Dropdown area ─────────────────────────────────────────────────────────
-    const { dw, pad, itemH } = GameScene.DROP;
+    const { dw, pad, itemH, itemGap } = GameScene.DROP;
     const dropY = hy + hh + 4;
-    const dropH  = pad + itemH + pad;
+    const dropH  = pad + itemH + itemGap + itemH + pad;
     if (this.menuOpen && x >= hx && x <= hx + dw && y >= dropY && y <= dropY + dropH) {
-      // "新規ゲーム" item
-      const itemX = hx + pad, itemY = dropY + pad, itemW = dw - pad * 2;
-      if (x >= itemX && x <= itemX + itemW && y >= itemY && y <= itemY + itemH) {
-        this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false); this.dirty = true;
-        if (confirm('保存データを削除して新規ゲームを開始しますか？')) this.newGame();
+      const itemX = hx + pad, itemW = dw - pad * 2;
+      const item0Y = dropY + pad;
+      const item1Y = item0Y + itemH + itemGap;
+      if (x >= itemX && x <= itemX + itemW) {
+        if (y >= item0Y && y <= item0Y + itemH) {
+          // ヘルプ
+          this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false);
+          this.helpOpen = true; this.dirty = true;
+        } else if (y >= item1Y && y <= item1Y + itemH) {
+          // 新規ゲーム
+          this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false); this.dirty = true;
+          if (confirm('保存データを削除して新規ゲームを開始しますか？')) this.newGame();
+        }
       }
       return; // consumed by dropdown area regardless
     }
@@ -811,6 +1118,15 @@ export class GameScene extends Phaser.Scene {
     // ── Close menu if clicking outside ───────────────────────────────────────
     if (this.menuOpen) {
       this.menuOpen = false; this._hamActive = false; this._redrawHamBtn(false); this.dirty = true;
+    }
+
+    // ── Help dialog ──────────────────────────────────────────────────────────
+    if (this.helpOpen) {
+      const c = this._helpCloseBtn;
+      if (c && x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+        this.helpOpen = false; this.dirty = true;
+      }
+      return; // block all map / panel interactions while help is open
     }
 
     if (x >= PANEL_X) return; // Panel handled by zones
