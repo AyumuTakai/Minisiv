@@ -561,13 +561,6 @@ export class GameScene extends Phaser.Scene {
     }
     y += 6;
 
-    this.addPText(px, y, '操作:', 12, '#888'); y += 14;
-    this.addPText(px, y, '  ユニットクリック → 選択', 11, '#666'); y += 12;
-    this.addPText(px, y, '  青タイル → 移動', 11, '#666'); y += 12;
-    this.addPText(px, y, '  赤タイル → 攻撃', 11, '#666'); y += 12;
-    this.addPText(px, y, '  都市クリック → 生産管理', 11, '#666'); y += 12;
-    this.addPText(px, y, '  Enter/Space → ターン終了', 11, '#666'); y += 16;
-
     // Save indicator
     const hasSave = !!localStorage.getItem('minisiv_save');
     this.addPText(px, y, hasSave ? '💾 自動保存: オン' : '💾 保存なし', 11, hasSave ? '#81c784' : '#888');
