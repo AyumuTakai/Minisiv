@@ -282,9 +282,9 @@ export class GameScene extends Phaser.Scene {
       const bg = CIV_DATA[unit.civIndex].unitBg;
       const spent = unit.movesLeft === 0 || unit.hasActed;
 
-      g.fillStyle(bg, spent ? 0.5 : 1);
+      g.fillStyle(bg, 1);
       g.fillCircle(ux, uy, 14);
-      g.lineStyle(2, spent ? 0x555555 : 0xffffff, 1);
+      g.lineStyle(spent ? 1 : 2.5, spent ? 0x444444 : 0xffffff, 1);
       g.strokeCircle(ux, uy, 14);
 
       // HP bar
@@ -297,7 +297,7 @@ export class GameScene extends Phaser.Scene {
       g.fillStyle(hpColor, 1); g.fillRect(bx, by, bw * unit.hp / def.maxHp, 3);
 
       const t = this.add.text(ux, uy, def.sym, {
-        fontSize: '13px', fill: spent ? '#999' : '#fff',
+        fontSize: '13px', fill: spent ? '#aaa' : '#fff',
         fontFamily: 'monospace', fontStyle: 'bold',
       }).setOrigin(0.5, 0.5);
       this.unitTexts.push(t);

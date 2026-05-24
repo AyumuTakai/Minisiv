@@ -369,6 +369,7 @@ export class GameState {
       this.tiles[city.y][city.x].owner = attacker.civIndex;
       // Reclaim territory
       city.territory = this.claimTerritory(attacker.civIndex, city.x, city.y, 1);
+      this.tiles[attacker.y][attacker.x].unitId = null;
       this.tiles[city.y][city.x].unitId = null;
       attacker.x = city.x; attacker.y = city.y;
       this.tiles[city.y][city.x].unitId = attacker.id;
