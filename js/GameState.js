@@ -191,9 +191,16 @@ export class GameState {
     // Restore ID counter above any existing IDs to avoid collisions
     const ids = [...this.units.map(u => u.id), ...this.cities.map(c => c.id)];
     if (ids.length) _nextId = Math.max(...ids) + 1;
-    // Rebuild tile→unit mapping from authoritative unit positions to fix any stale state
+    // Rebuild tile→unit mapping; remove any units sharing a tile (ghost from old stale-tile bug)
     for (const row of this.tiles) for (const t of row) t.unitId = null;
-    for (const u of this.units) this.tiles[u.y][u.x].unitId = u.id;
+    const seen = new Set();
+    this.units = this.units.filter(u => {
+      const key = `${u.x},${u.y}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      this.tiles[u.y][u.x].unitId = u.id;
+      return true;
+    });
   }
 
   save() {
@@ -316,6 +323,7 @@ export class GameState {
     const range = this.getMovementRange(unit);
     const key = `${tx},${ty}`;
     if (!range.has(key)) return false;
+    if (this.tiles[ty][tx].unitId) return false; // 敵・味方問わず占有タイルには移動不可
     this.tiles[unit.y][unit.x].unitId = null;
     unit.movesLeft = range.get(key).movesLeft;
     unit.x = tx; unit.y = ty;
