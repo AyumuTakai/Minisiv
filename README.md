@@ -1,6 +1,6 @@
-# Minisiv
+# Sukociv
 
-短時間で遊べるストラテジーゲーム
-Claude Code(Sonet 4.6)で開発。
+少しの時間で遊べるストラテジーゲーム
+Claude Code(Sonet 4.6)で作成。
 
-[プレイはこちら](https://ayumutakai.github.io/Minisiv/)
+[プレイはこちら](https://ayumutakai.github.io/Sukociv/)
